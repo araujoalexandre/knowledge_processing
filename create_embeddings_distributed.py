@@ -26,20 +26,34 @@ class ArticleDataset(Dataset):
             articles = f.readlines()
         return dirname, filename, articles
 
-def process_batch(batch, model, out, rank):
+def collate_fn(batch):
+    """
+    Custom collate function to handle variable-length articles (lines per file).
+    """
+    batch_output = {"dirname": [], "filename": [], "articles": []}
+
     for dirname, filename, articles in batch:
-        outpath = f'{out}/{dirname[0]}'
+        batch_output["dirname"].append(dirname)
+        batch_output["filename"].append(filename)
+        batch_output["articles"].append(articles)
+
+    return batch_output["dirname"], batch_output["filename"], batch_output["articles"]
+
+def process_batch(batch, model, out, rank):
+    dirname, filename, articles = batch
+    for dname, fname, article_lines in zip(dirname, filename, articles):
+        outpath = f'{out}/{dname[0]}'
         if not exists(outpath):
             os.makedirs(outpath, exist_ok=True)
         
         texts = []
         save_paths = []
         
-        for article_id, line in enumerate(articles[0]):
+        for article_id, line in enumerate(article_lines):
             item = json.loads(line)
             if item['text'] == '':
                 continue  # Skip empty texts
-            embedding_path = f'{outpath}/{filename[0]}_{article_id}.npy'
+            embedding_path = f'{outpath}/{fname[0]}_{article_id}.npy'
             if exists(embedding_path):
                 continue  # Skip if the embedding already exists
             texts.append(item['text'])
@@ -61,7 +75,7 @@ def main():
     dataset = ArticleDataset(paths)
     
     sampler = DistributedSampler(dataset, num_replicas=idr_torch.size, rank=idr_torch.rank, shuffle=False)
-    dataloader = DataLoader(dataset, sampler=sampler, batch_size=8)  # Batch size set to 8, adjust as necessary
+    dataloader = DataLoader(dataset, sampler=sampler, batch_size=8, collate_fn=collate_fn)  # Custom collate_fn
     
     total_batches = len(dataloader)
     
@@ -101,3 +115,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
