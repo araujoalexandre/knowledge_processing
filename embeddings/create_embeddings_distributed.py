@@ -42,7 +42,7 @@ def collate_fn(batch):
 def process_batch(batch, model, out, rank):
     dirname, filename, articles = batch
     for dname, fname, article_lines in zip(dirname, filename, articles):
-        outpath = f'{out}/{dname[0]}'
+        outpath = f'{out}/{dname}'
         if not exists(outpath):
             os.makedirs(outpath, exist_ok=True)
         
@@ -53,7 +53,7 @@ def process_batch(batch, model, out, rank):
             item = json.loads(line)
             if item['text'] == '':
                 continue  # Skip empty texts
-            embedding_path = f'{outpath}/{fname[0]}_{article_id}.npy'
+            embedding_path = f'{outpath}/{fname}_{article_id}.npy'
             if exists(embedding_path):
                 continue  # Skip if the embedding already exists
             texts.append(item['text'])
