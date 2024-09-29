@@ -47,7 +47,7 @@ def process_batch(batch, model, output_dir, device):
           'embedding': embedding
         }, embedding_path)
 
-def main(input_dir, output_dir, batch_size, is_distributed=False):
+def main(input_dir, output_dir, batch_size, is_distributed=True):
 
     if not exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)
