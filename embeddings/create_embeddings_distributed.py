@@ -116,8 +116,15 @@ def main(path_to_files='files', out='embeddings'):
         progress_bar.close()
 
 if __name__ == "__main__":
-    args = argparse.ArgumentParser()
-    args.add_argument('--path_to_files', type=str, default='files')
-    args.add_argument('--out', type=str, default='embeddings')
+    parser = argparse.ArgumentParser(
+                    prog='create_embeddings_distributed.py',
+                    description='Create embeddings for articles in parallel',
+                    epilog='Enjoy the program! :)',
+                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    parser.add_argument('--path_to_files', type=str, default='files')
+    parser.add_argument('--out', type=str, default='embeddings')
+    args = parser.parse_args()
+
     main(path_to_files=args.path_to_files, out=args.out)
 
