@@ -11,38 +11,42 @@ import idr_torch
 import torch.distributed as dist
 import torch
 from tqdm import tqdm
+import argparse
 
 class ArticleDataset(Dataset):
+    """ Dataset class to load articles from files. 
+        Each txt file contains multiple articles in JSON format.
+    """
     def __init__(self, paths):
         self.paths = paths
+        self.number_articles = 0
+        self.list_of_indices = []
+        for path in paths:
+            with open(path) as f:
+                self.number_articles += len(f.readlines())
+                self.list_of_indices.append(len(f.readlines()))
+        print(f'Number of articles: {self.number_articles}')
+        print(f'Number of files: {len(paths)}')
+        self.list_of_indices = np.cumsum(self.list_of_indices)      
     
     def __len__(self):
-        return len(self.paths)
+        return len(self.number_articles)
     
     def __getitem__(self, idx):
-        path = self.paths[idx]
-        dirname, filename = path.split('/')[-2:]
-        with open(path) as f:
-            articles = f.readlines()
-        return dirname, filename, articles
+        idx_file = np.searchsorted(self.list_of_indices, idx, side='right')
+        if idx_file == 0:
+            idx_in_file = idx
+        else:
+            idx_in_file = idx - self.list_of_indices[idx_file - 1]
+        with open(self.paths[idx_file]) as f:
+            lines = f.readlines()
+            return self.paths[idx_file], self.paths[idx_file].split('/')[-1], lines[idx_in_file]
 
-def collate_fn(batch):
-    """
-    Custom collate function to handle variable-length articles (lines per file).
-    """
-    batch_output = {"dirname": [], "filename": [], "articles": []}
-
-    for dirname, filename, articles in batch:
-        batch_output["dirname"].append(dirname)
-        batch_output["filename"].append(filename)
-        batch_output["articles"].append(articles)
-
-    return batch_output["dirname"], batch_output["filename"], batch_output["articles"]
-
+        
 def process_batch(batch, model, out, rank):
     dirname, filename, articles = batch
     for dname, fname, article_lines in zip(dirname, filename, articles):
-        outpath = f'{out}/{dname}'
+        outpath = f'{out}/{fname}'
         if not exists(outpath):
             os.makedirs(outpath, exist_ok=True)
         
@@ -50,12 +54,8 @@ def process_batch(batch, model, out, rank):
         save_paths = []
         
         for article_id, line in enumerate(article_lines):
-            item = json.loads(line)
-            if item['text'] == '':
-                continue  # Skip empty texts
+            item = json.loads(line) 
             embedding_path = f'{outpath}/{fname}_{article_id}.npy'
-            if exists(embedding_path):
-                continue  # Skip if the embedding already exists
             texts.append(item['text'])
             save_paths.append(embedding_path)
         
@@ -64,18 +64,18 @@ def process_batch(batch, model, out, rank):
             for emb, save_path in zip(embeddings, save_paths):
                 np.save(save_path, emb)
 
-def main():
+def main(path_to_files='files', out='embeddings'):
     dist.init_process_group(backend='nccl', init_method='env://', world_size=idr_torch.size, rank=idr_torch.rank)
     
     model = SentenceTransformer("multi-qa-mpnet-base-dot-v1").cuda(idr_torch.rank)
     
-    paths = natsort.natsorted(glob.glob('./outputs/**/*'))
-    out = './embeddings'
+    paths = natsort.natsorted(glob.glob(f'{path_to_files}/*.txt', recursive=True))
+    print(paths)
 
     dataset = ArticleDataset(paths)
     
     sampler = DistributedSampler(dataset, num_replicas=idr_torch.size, rank=idr_torch.rank, shuffle=False)
-    dataloader = DataLoader(dataset, sampler=sampler, batch_size=8, collate_fn=collate_fn)  # Custom collate_fn
+    dataloader = DataLoader(dataset, sampler=sampler, batch_size=8)  # Custom collate_fn
     
     total_batches = len(dataloader)
     
@@ -114,5 +114,8 @@ def main():
         progress_bar.close()
 
 if __name__ == "__main__":
-    main()
+    args = argparse.ArgumentParser()
+    args.add_argument('--path_to_files', type=str, default='files')
+    args.add_argument('--out', type=str, default='embeddings')
+    main(path_to_files=args.path_to_files, out=args.out)
 
