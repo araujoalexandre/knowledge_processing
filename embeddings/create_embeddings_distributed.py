@@ -71,6 +71,8 @@ def main(path_to_files='files', out='embeddings'):
     
     paths = natsort.natsorted(glob.glob(f'{path_to_files}/*.txt', recursive=True))
     print(paths)
+    if not exists(out):
+            os.makedirs(out, exist_ok=True)
 
     dataset = ArticleDataset(paths)
     
