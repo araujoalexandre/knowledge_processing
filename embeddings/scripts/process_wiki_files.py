@@ -1,22 +1,29 @@
 import os
 import json
 import argparse
+import tarfile
+import natsort
 
-def process_wiki_files(input_folder, output_folder):
+def process_wiki_files(input_dir, output_dir):
     # Create the output folder if it doesn't exist
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
     # Iterate through all subfolders in the input folder
-    for subfolder in os.listdir(input_folder):
-        subfolder_path = os.path.join(input_folder, subfolder)
-        
+    subfolders = natsort.natsorted(os.listdir(input_dir))
+    n_subfolders = len(subfolders)
+
+    for subfolder_id, subfolder in enumerate(subfolders):
+        subfolder_path = os.path.join(input_dir, subfolder)
+        print(subfolder_path)
+
         if os.path.isdir(subfolder_path):
-            # Create a corresponding output file for each subfolder
-            output_file_path = os.path.join(output_folder, f"{subfolder}.txt")
-            
-            with open(output_file_path, 'w', encoding='utf-8') as output_file:
+            # Create a corresponding output tar file for each subfolder
+            output_file_path = os.path.join(output_dir, f"data-{subfolder_id+1:06d}-{n_subfolders:06d}.tar")
+            with tarfile.open(output_file_path, "w") as tar:
+
                 # Process all wiki files in the current subfolder
+                article_id = 0
                 for wiki_file in os.listdir(subfolder_path):
                     wiki_file_path = os.path.join(subfolder_path, wiki_file)
                     
@@ -25,8 +32,22 @@ def process_wiki_files(input_folder, output_folder):
                             try:
                                 json_data = json.loads(line)
                                 # Check if the 'text' attribute is not empty
-                                if json_data.get('text'):
-                                    output_file.write(line)
+                                if not json_data.get('text', False):
+                                    continue
+
+                                # Create a temporary file for each JSON line
+                                temp_file = os.path.join(output_dir, f"{subfolder}_{article_id}.json")
+                                with open(temp_file, 'w') as tf:
+                                    tf.write(line)
+
+                                # Add the temporary file to the tar archive
+                                tar.add(temp_file, arcname=f"{subfolder}_{article_id}.txt")
+
+                                # Remove the temporary file
+                                os.remove(temp_file)
+
+                                article_id += 1
+
                             except json.JSONDecodeError:
                                 print(f"Error decoding JSON in file: {wiki_file_path}")
 
