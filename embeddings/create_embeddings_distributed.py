@@ -15,26 +15,44 @@ from sentence_transformers import SentenceTransformer
 from torch.utils.data import Dataset, DataLoader, DistributedSampler
 from tqdm.auto import tqdm
 
+os.environ['SENTENCE_TRANSFORMERS_HOME'] = "/lustre/fswork/projects/rech/esq/udg63qz/knowladge/knowledge_processing/models/"
 
-def make_dataloader(path, batch_size):
+def send_to_all(value):
+    size = idr_torch.size
+    rank = idr_torch.rank
+    tensor = torch.zeros(1).cuda()
+    
+    if rank == 0:
+        tensor += value
+    torch.distributed.all_reduce(tensor, torch.distributed.ReduceOp.SUM, async_op=False)
+    return int(tensor.cpu().item())
 
+def make_dataloader(path, batch_size, shard_index=0, num_shards=1):
     n_files = len(glob.glob(f"{path}/*tar"))
     start, end = 1, n_files
     files_range = f"{start:06d}..{end:06d}"
-    path_tar_files = f"{path}/data-{{{files_range}}}-{end:06d}.tar"
+    path_tar_files = f"{path}/data-{{{files_range}}}-{n_files:06d}.tar"
 
-    # the sample file is a dict with keys: ['__key__', '__url__', 'txt', '__local_path__']
-    # __key__, __url__, __local_path__ are metadata of the tar reading 
-    # the content is in 'txt' in bytes, we parse this content with json.loads
     def make_sample(sample):
-        article = json.loads(sample['txt'])
+        # Decode the 'txt' field from bytes to string
+        article_json = sample['txt'].decode('utf-8')
+        # Parse the JSON string into a Python dictionary
+        article = json.loads(article_json)
         return sample['__key__'], article['url'], article['text']
 
-    # This is the basic WebDataset definition
-    trainset = wds.WebDataset(
-        path_tar_files, resampled=False, shardshuffle=False, cache_dir=None, nodesplitter=wds.split_by_node)
-    trainset = trainset.map(make_sample).batched(batch_size)
-    
+    # Shard the dataset
+    trainset = (
+        wds.WebDataset(
+            path_tar_files,
+            resampled=False,
+            shardshuffle=False,
+            cache_dir=None,
+            nodesplitter=wds.split_by_worker
+        )
+        .map(make_sample)
+        .batched(batch_size)
+    )
+
     return trainset
 
 def process_batch(batch, model, output_dir, device):
@@ -48,39 +66,57 @@ def process_batch(batch, model, output_dir, device):
         }, embedding_path)
 
 def main(input_dir, output_dir, batch_size, is_distributed=True):
-
     if not exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)
 
     if is_distributed:
+        print(f'init_process_group, world_size: {idr_torch.size}, rank: {idr_torch.rank}')
+        print(int(os.environ['WORLD_SIZE']), )
         dist.init_process_group(
             backend='nccl',
             init_method='env://',
             world_size=idr_torch.size,
             rank=idr_torch.rank
         )
-    
-    model = SentenceTransformer("multi-qa-mpnet-base-dot-v1",
-        tokenizer_kwargs={'clean_up_tokenization_spaces': False})
+        torch.cuda.set_device(idr_torch.local_rank)
+        print(f"Distributed initiated on {idr_torch.rank}")
+
+    dataset = make_dataloadejr(input_dir, batch_size, idr_torch.rank, idr_torch.size)
+    print('make_dataloader')
+
+    if idr_torch.rank == 0:
+        total_files = 0
+        tar_files = glob.glob(f'{input_dir}/*.tar')
+        for k, tar_file in enumerate(tar_files):
+            with tarfile.open(tar_file, 'r') as tar:
+                total_files += len(tar.getmembers())
+    else:
+        total_files = 0
+
+    total_files = send_to_all(total_files)
+    print(f"Dataset loaded on {idr_torch.rank}")
+    dataset = dataset.with_length(total_files)
+    # sampler = None
+    # if is_distributed:
+    #     sampler = DistributedSampler(dataset, num_replicas=idr_torch.size, rank=idr_torch.rank, shuffle=False)
+    # dataloader = DataLoader(dataset, sampler=sampler, batch_size=None)
+    dataloader = DataLoader(dataset, batch_size=None)
+    print(f"Dataloader load on {idr_torch.rank}")
+
+    model = SentenceTransformer("multi-qa-mpnet-base-dot-v1", local_files_only=True,
+                                tokenizer_kwargs={'clean_up_tokenization_spaces': False})
+
+    print("Model loaded on cpu")
     if torch.cuda.is_available():
         model = model.cuda(idr_torch.rank)
-    
-    dataset = make_dataloader(input_dir, batch_size)
-    
-    sampler = None
-    if is_distributed:
-        sampler = DistributedSampler(dataset, num_replicas=idr_torch.size, rank=idr_torch.rank, shuffle=False)
-    dataloader = DataLoader(dataset, sampler=sampler, batch_size=None)
+        print(f"Model loaded on {idr_torch.rank}")
 
-    # count the number of files in total in the tar archives
-    # this is a bit slow but might be the only way to get the total number of files
-    total_files = 0
-    tar_files = glob.glob(f'{input_dir}/*.tar')
-    for tar_file in tar_files:
-        with tarfile.open(tar_file, 'r') as tar:
-            total_files += len(tar.getmembers())
+    if idr_torch.rank == 0:
+      print("Model loaded.")
 
-    total_batches = total_files / batch_size
+
+
+    total_batches = total_files // batch_size
 
     if idr_torch.rank == 0:
         print(f"total files to process: {len(tar_files)} tar files")
@@ -123,6 +159,7 @@ if __name__ == "__main__":
     parser.add_argument('--output_dir', type=str, default='./embeddings')
     parser.add_argument('--batch_size', type=int, default=32)
     args = parser.parse_args()
-    main(args.input_dir, args.output_dir, args.batch_size)
+    print(args)
+    main(args.input_dir, args.output_dir, args.batch_size, True)
 
 

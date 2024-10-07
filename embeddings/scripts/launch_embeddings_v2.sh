@@ -14,14 +14,18 @@ out_dir="slurm_outputs"
 #SBATCH --ntasks-per-node=6
 #SBATCH --output=$out_dir/$job_name/%t_out.txt
 #SBATCH --error=$out_dir/$job_name/%t_err.txt
-#SBATCH --time=20:00:00
+#SBATCH --time=05:00:00
 #SBATCH --hint=nomultithread
 
 module purge 
 module load cpuarch/amd
-module load pytorch-gpu/py3/1.12.1
-HF_DATASETS_OFFLINE=1 HF_HUB_OFFLINE=1
+module load pytorch-gpu/py3/2.3.0
+
+HF_DATASETS_OFFLINE=1
+HF_HUB_OFFLINE=1
+TRANSFORMERS_OFFLINE=1
+
 # Echo des commandes lancees
 set -x 
-srun python embeddings/create_embeddings_distributed.py --input_dir datadir/wikiprocessed --output_dir datadir/wikiembeddings --batch_size 1024
+srun python embeddings/create_embeddings_distributed_v2.py --input_dir datadir/wikiprocessed --output_dir datadir/processed_embed_v2 --batch_size 1536
 EOT
