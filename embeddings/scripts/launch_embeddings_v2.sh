@@ -7,18 +7,18 @@ out_dir="slurm_outputs"
 #SBATCH --job-name=$job_name
 #SBATCH -A tqh@a100
 #SBATCH -p gpu_p5
-#SBATCH --gres=gpu:6
+#SBATCH --gres=gpu:8
 #SBATCH -C a100
 #SBATCH --cpus-per-task=8
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=6
+#SBATCH --ntasks-per-node=8
 #SBATCH --output=$out_dir/$job_name/%t_out.txt
 #SBATCH --error=$out_dir/$job_name/%t_err.txt
-#SBATCH --time=05:00:00
+#SBATCH --time=20:00:00
 #SBATCH --hint=nomultithread
 
 module purge 
-module load cpuarch/amd
+module load arch/a100
 module load pytorch-gpu/py3/2.3.0
 
 HF_DATASETS_OFFLINE=1

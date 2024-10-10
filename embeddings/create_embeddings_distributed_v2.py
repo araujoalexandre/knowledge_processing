@@ -171,16 +171,22 @@ def main(input_dir, output_dir, batch_size, is_distributed=True):
         chrono = time.time()
 
         if local_rank == 0 and batch_idx > 2 and batch_idx < 20:
+            
             print(f'files/secs: {examples_per_second}')
             time_by_batch.append(examples_per_second)
 
-        if local_rank == 0 and batch_idx == 20:
+        if local_rank == 0 and batch_idx % 20 == 0:
+            allocated_memory = torch.cuda.memory_allocated(idr_torch.rank) / (1024 ** 2)  # in MB
+            reserved_memory = torch.cuda.memory_reserved(idr_torch.rank) / (1024 ** 2)   # in MB
+            number_of_file_to_save = save_queue.qsize()
+
             avg_examples_sec = np.mean(time_by_batch) 
             total_seconds = total_files / avg_examples_sec
             n_days = total_seconds // 86400
             n_hours = (total_seconds % 86400) / 3600
-            print('Approximated time: {:.0f} days and {:.1f} hours'.format(
+            print('\t Approximated time: {:.0f} days and {:.1f} hours'.format(
                     n_days, n_hours))
+
 
 
     # Wait for all saving tasks to complete
