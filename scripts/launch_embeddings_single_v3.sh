@@ -1,8 +1,14 @@
 job="knowledge_embeddings"
 job_name=$job 
 project_path="/lustre/fswork/projects/rech/esq/udg63qz/knowladge/knowledge_processing"
-out_dir="slurm_outputs"
-tar_file="$project_path/datadir/wikiprocessed/data-000001-000186.tar"
+if [ $# -eq 0 ]; then
+    echo "Error: Please provide the path to tar files as an argument."
+    echo "Usage: $0 <path_to_tar_files>"
+    exit 1
+fi
+tar_files_path="$1"
+tar_file="$tar_files_path/data-000001-000186.tar"
+out_dir="${tar_files_path}_embeddings"
 
 echo "Launching job $job_name for single tar file"
 sbatch <<EOT
@@ -15,8 +21,8 @@ sbatch <<EOT
 #SBATCH --cpus-per-task=20
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --output=$out_dir/$job_name/%j_out.txt
-#SBATCH --error=$out_dir/$job_name/%j_err.txt
+#SBATCH --output=$project_path/knowledge_processing/slurm_outputs/$job_name/%j_out.txt
+#SBATCH --error=$project_path/knowledge_processing/slurm_outputs/$job_name/%j_err.txt
 #SBATCH --time=00:30:00
 #SBATCH --hint=nomultithread
 
@@ -34,7 +40,7 @@ set -x
 srun python $project_path/main.py \
     --mode embedding \
     --tar_file $tar_file \
-    --output_dir $project_path/datadir/wikiembeddings/ \
+    --output_dir $out_dir \
     --ngpus 4 \
     --batch_size 1024
 EOT
