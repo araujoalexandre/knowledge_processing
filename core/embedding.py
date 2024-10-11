@@ -39,11 +39,6 @@ def compute_embeddings(args: argparse.Namespace) -> None:
         model = model.half()
     model = torch.compile(model)
     
-    # Use DataParallel if multiple GPUs are available
-    if torch.cuda.device_count() > 1:
-        print(f"Using {args.ngpus} GPUs")
-        model = torch.nn.DataParallel(model)
-
     # Prepare the dataset and dataloader
     dataset = TarIterableDataset(args.tar_file)
     dataloader = DataLoader(dataset, batch_size=args.batch_size)
