@@ -31,7 +31,7 @@ sbatch <<EOT
 #SBATCH --array=0-$((num_files - 1))
 
 module purge 
-module load cpuarch/amd
+module load arch/a100
 module load pytorch-gpu/py3/2.3.0
 
 HF_DATASETS_OFFLINE=1
@@ -41,12 +41,14 @@ TRANSFORMERS_OFFLINE=1
 set -x 
 
 # Get the current tar file based on the array task ID
+tar_files=($tar_files_path/data*.tar)
 current_tar_file=\${tar_files[\$SLURM_ARRAY_TASK_ID]}
 
-srun python $project_path/main.py \
-    --mode embedding \
-    --tar_file $current_tar_file \
-    --output_dir $out_dir \
-    --ngpus 1 \
+srun python $project_path/main.py \\
+    --mode embedding \\
+    --tar_file \$current_tar_file \\
+    --output_dir $out_dir \\
+    --ngpus 1 \\
     --batch_size 1024
 EOT
+
